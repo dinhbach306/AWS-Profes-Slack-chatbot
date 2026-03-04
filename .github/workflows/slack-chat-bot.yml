@@ -25,17 +25,17 @@ jobs:
 
           # 3. Trích xuất JSON blocks bằng Python (đã sửa lỗi cú pháp)
           BLOCKS=$(echo $RESPONSE | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    content = data['candidates'][0]['content']['parts'][0]['text']
-    # Xử lý xóa bỏ markdown code block nếu AI trả về
-    clean_content = content.strip().replace('```json', '').replace('```', '').strip()
-    print(clean_content)
-except Exception as e:
-    print(f'Error parsing: {e}', file=sys.stderr)
-    sys.exit(1)
-")
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              content = data['candidates'][0]['content']['parts'][0]['text']
+              # Xử lý xóa bỏ markdown code block nếu AI trả về
+              clean_content = content.strip().replace('```json', '').replace('```', '').strip()
+              print(clean_content)
+          except Exception as e:
+              print(f'Error parsing: {e}', file=sys.stderr)
+              sys.exit(1)
+          ")
           
           echo "SLACK_BLOCKS<<EOF" >> $GITHUB_ENV
           echo "$BLOCKS" >> $GITHUB_ENV
