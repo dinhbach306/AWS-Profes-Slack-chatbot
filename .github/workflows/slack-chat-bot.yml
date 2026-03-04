@@ -20,44 +20,54 @@ jobs:
           import os
           import json
           import urllib.request
+          from urllib.error import HTTPError
 
-          # 1. Cấu hình
-          api_key = os.environ['GEMINI_API_KEY']
-          webhook_url = os.environ['SLACK_WEBHOOK_URL']
-          model = "gemini-1.5-flash" # Dùng bản này để đảm bảo ổn định với API Free
+          # 1. Cấu hình & Kiểm tra biến môi trường
+          api_key = os.environ.get('GEMINI_API_KEY', '').strip()
+          webhook_url = os.environ.get('SLACK_WEBHOOK_URL', '').strip()
+
+          if not api_key or not webhook_url:
+              print("❌ Lỗi: Chưa cấu hình GEMINI_API_KEY hoặc SLACK_WEBHOOK_URL trong GitHub Secrets.")
+              exit(1)
+
+          model = "gemini-1.5-flash"
           url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-
           prompt = "Bạn là chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt về .NET/AWS. Trả về DUY NHẤT JSON chuẩn Slack Block Kit gồm: header, section scenario, section options, divider, context. Không giải thích thêm."
 
           # 2. Gọi Gemini API
-          data = {
-              "contents": [{"parts": [{"text": prompt}]}]
-          }
-          
+          data = {"contents": [{"parts": [{"text": prompt}]}]}
           try:
               req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
               with urllib.request.urlopen(req) as response:
                   res_data = json.loads(response.read().decode())
                   
-                  # Trích xuất nội dung text
+                  # Trích xuất và làm sạch chuỗi JSON
                   raw_text = res_data['candidates'][0]['content']['parts'][0]['text']
-                  # Làm sạch chuỗi JSON từ AI
                   clean_json = raw_text.strip().replace('```json', '').replace('```', '').strip()
                   blocks = json.loads(clean_json)
-                  
-                  # 3. Gửi sang Slack
-                  slack_data = {
-                      "attachments": [{
-                          "color": "#36a64f",
-                          "blocks": blocks
-                      }]
-                  }
-                  
-                  slack_req = urllib.request.Request(webhook_url, data=json.dumps(slack_data).encode('utf-8'), headers={'Content-Type': 'application/json'})
-                  urllib.request.urlopen(slack_req)
-                  print("✅ Successfully sent quiz to Slack!")
-
+          except HTTPError as e:
+              print(f"❌ Lỗi từ Gemini API: HTTP {e.code} - {e.reason}")
+              print(f"Chi tiết: {e.read().decode()}")
+              exit(1)
           except Exception as e:
-              print(f"❌ Error: {str(e)}")
-              if 'res_data' in locals(): print(f"API Response: {res_data}")
+              print(f"❌ Lỗi xử lý dữ liệu Gemini: {str(e)}")
+              exit(1)
+
+          # 3. Gửi sang Slack
+          slack_data = {
+              "attachments": [{
+                  "color": "#36a64f",
+                  "blocks": blocks
+              }]
+          }
+          try:
+              slack_req = urllib.request.Request(webhook_url, data=json.dumps(slack_data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+              urllib.request.urlopen(slack_req)
+              print("✅ Successfully sent quiz to Slack!")
+          except HTTPError as e:
+              print(f"❌ Lỗi từ Slack Webhook: HTTP {e.code} - {e.reason}")
+              print(f"Chi tiết: {e.read().decode()}")
+              exit(1)
+          except Exception as e:
+              print(f"❌ Lỗi khi gửi Slack: {str(e)}")
               exit(1)
