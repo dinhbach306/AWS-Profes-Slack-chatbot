@@ -8,49 +8,56 @@ jobs:
   generate_and_send:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Block Kit Question from Gemini
-        id: gemini
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate and Send
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        shell: python
         run: |
-          # 1. Định nghĩa Prompt (viết trên 1 dòng để tránh lỗi xuống dòng trong curl)
-          PROMPT="Hãy đóng vai chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt. Trả về JSON duy nhất theo cấu trúc Block Kit của Slack gồm: header, section scenario, section 4 đáp án với icon, divider, và context giải thích. Chỉ trả về JSON, không kèm chữ."
+          import os
+          import json
+          import urllib.request
 
-          # 2. Gọi API (Sử dụng model gemini-1.5-flash để ổn định nhất trên API Free hiện tại hoặc gemini-3-flash nếu bạn đã có quyền truy cập)
-          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
-            -H 'Content-Type: application/json' \
-            -d "{
-              \"contents\": [{
-                \"parts\":[{\"text\": \"$PROMPT\"}]
-              }]
-            }")
+          # 1. Cấu hình
+          api_key = os.environ['GEMINI_API_KEY']
+          webhook_url = os.environ['SLACK_WEBHOOK_URL']
+          model = "gemini-1.5-flash" # Dùng bản này để đảm bảo ổn định với API Free
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
-          # 3. Trích xuất JSON blocks bằng Python (đã sửa lỗi cú pháp)
-          BLOCKS=$(echo $RESPONSE | python3 -c "
-          import sys, json
-          try:
-              data = json.load(sys.stdin)
-              content = data['candidates'][0]['content']['parts'][0]['text']
-              # Xử lý xóa bỏ markdown code block nếu AI trả về
-              clean_content = content.strip().replace('```json', '').replace('```', '').strip()
-              print(clean_content)
-          except Exception as e:
-              print(f'Error parsing: {e}', file=sys.stderr)
-              sys.exit(1)
-          ")
+          prompt = "Bạn là chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt về .NET/AWS. Trả về DUY NHẤT JSON chuẩn Slack Block Kit gồm: header, section scenario, section options, divider, context. Không giải thích thêm."
+
+          # 2. Gọi Gemini API
+          data = {
+              "contents": [{"parts": [{"text": prompt}]}]
+          }
           
-          echo "SLACK_BLOCKS<<EOF" >> $GITHUB_ENV
-          echo "$BLOCKS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          try:
+              req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+              with urllib.request.urlopen(req) as response:
+                  res_data = json.loads(response.read().decode())
+                  
+                  # Trích xuất nội dung text
+                  raw_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                  # Làm sạch chuỗi JSON từ AI
+                  clean_json = raw_text.strip().replace('```json', '').replace('```', '').strip()
+                  blocks = json.loads(clean_json)
+                  
+                  # 3. Gửi sang Slack
+                  slack_data = {
+                      "attachments": [{
+                          "color": "#36a64f",
+                          "blocks": blocks
+                      }]
+                  }
+                  
+                  slack_req = urllib.request.Request(webhook_url, data=json.dumps(slack_data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+                  urllib.request.urlopen(slack_req)
+                  print("✅ Successfully sent quiz to Slack!")
 
-      - name: Send to Slack
-        run: |
-          # Sử dụng jq để đảm bảo JSON gửi đi không bị lỗi ký tự đặc biệt
-          curl -X POST -H 'Content-type: application/json' \
-          --data "{
-            \"attachments\": [
-              {
-                \"color\": \"#36a64f\",
-                \"blocks\": ${{ env.SLACK_BLOCKS }}
-              }
-            ]
-          }" \
-          ${{ secrets.SLACK_WEBHOOK_URL }}
+          except Exception as e:
+              print(f"❌ Error: {str(e)}")
+              if 'res_data' in locals(): print(f"API Response: {res_data}")
+              exit(1)
