@@ -1,0 +1,52 @@
+name: AWS Study Bot Block Kit
+on:
+  schedule:
+    - cron: '0 2,6,10 * * *' 
+  workflow_dispatch:
+
+jobs:
+  generate_and_send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Block Kit Question from Gemini
+        id: gemini
+        run: |
+          # Prompt yêu cầu Gemini trả về JSON chuẩn Slack Block Kit
+          PROMPT="Hãy đóng vai chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt. 
+                Trả về JSON duy nhất theo cấu trúc Block Kit của Slack:
+                - Một 'header' in đậm tiêu đề.
+                - Một 'section' chứa tình huống (scenario).
+                - Một 'section' liệt kê 4 đáp án A, B, C, D với các icon (ví dụ: 🔹).
+                - Một 'divider'.
+                - Một 'context' chứa đáp án đúng và giải thích ngắn gọn (để ẩn hoặc phân tách rõ ràng).
+                Lưu ý: Chỉ trả về JSON, không kèm giải thích bên ngoài."
+
+          RESPONSE=$(curl https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }} \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            -d "{
+              \"contents\": [{
+                \"parts\":[{\"text\": \"$PROMPT\"}]
+              }]
+            }")
+          
+          # Trích xuất JSON blocks
+          BLOCKS=$(echo $RESPONSE | python3 -c "import sys, json; content = json.load(sys.stdin)['candidates'][0]['content']['parts'][0]['text']; print(content.strip().strip('```json').strip('```'))")
+          
+          echo "SLACK_BLOCKS<<EOF" >> $GITHUB_ENV
+          echo "$BLOCKS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Send to Slack
+        run: |
+          # Gửi tin nhắn kèm attachment để có thanh màu xanh bên cạnh cho đẹp
+          curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"attachments\": [
+              {
+                \"color\": \"#36a64f\",
+                \"blocks\": ${{ env.SLACK_BLOCKS }}
+              }
+            ]
+          }" \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
