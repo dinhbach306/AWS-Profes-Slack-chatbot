@@ -32,7 +32,15 @@ jobs:
 
           model = "gemini-3.1-flash-lite-preview"
           url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-          prompt = "Bạn là chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt về .NET/AWS. Trả về DUY NHẤT JSON chuẩn Slack Block Kit gồm: header, section scenario, section options, divider, context. Không giải thích thêm."
+          prompt = """You are an expert AWS technical trainer. Generate 1 highly complex, scenario-based multiple-choice question in English for the AWS Certified Solutions Architect - Professional exam. 
+          The question should cover advanced enterprise topics like multi-region architectures, complex data migrations, or AWS Organizations security.
+          Return ONLY a valid Slack Block Kit JSON array. Do not include markdown formatting like ```json.
+          Structure the blocks as:
+          1. header: "AWS Professional Practice Question"
+          2. section: The detailed scenario
+          3. section: The options (A, B, C, D)
+          4. divider
+          5. context: The correct answer and a brief explanation."""
 
           # 2. Call Gemini API
           data = {"contents": [{"parts": [{"text": prompt}]}]}
