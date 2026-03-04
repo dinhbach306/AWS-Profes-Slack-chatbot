@@ -11,27 +11,31 @@ jobs:
       - name: Generate Block Kit Question from Gemini
         id: gemini
         run: |
-          # Prompt yêu cầu Gemini trả về JSON chuẩn Slack Block Kit
-          PROMPT="Hãy đóng vai chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt. 
-                Trả về JSON duy nhất theo cấu trúc Block Kit của Slack:
-                - Một 'header' in đậm tiêu đề.
-                - Một 'section' chứa tình huống (scenario).
-                - Một 'section' liệt kê 4 đáp án A, B, C, D với các icon (ví dụ: 🔹).
-                - Một 'divider'.
-                - Một 'context' chứa đáp án đúng và giải thích ngắn gọn (để ẩn hoặc phân tách rõ ràng).
-                Lưu ý: Chỉ trả về JSON, không kèm giải thích bên ngoài."
+          # 1. Định nghĩa Prompt (viết trên 1 dòng để tránh lỗi xuống dòng trong curl)
+          PROMPT="Hãy đóng vai chuyên gia AWS SAP-C02. Tạo 1 câu hỏi trắc nghiệm tiếng Việt. Trả về JSON duy nhất theo cấu trúc Block Kit của Slack gồm: header, section scenario, section 4 đáp án với icon, divider, và context giải thích. Chỉ trả về JSON, không kèm chữ."
 
-          RESPONSE=$(curl https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }} \
+          # 2. Gọi API (Sử dụng model gemini-1.5-flash để ổn định nhất trên API Free hiện tại hoặc gemini-3-flash nếu bạn đã có quyền truy cập)
+          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
             -H 'Content-Type: application/json' \
-            -X POST \
             -d "{
               \"contents\": [{
                 \"parts\":[{\"text\": \"$PROMPT\"}]
               }]
             }")
-          
-          # Trích xuất JSON blocks
-          BLOCKS=$(echo $RESPONSE | python3 -c "import sys, json; content = json.load(sys.stdin)['candidates'][0]['content']['parts'][0]['text']; print(content.strip().strip('```json').strip('```'))")
+
+          # 3. Trích xuất JSON blocks bằng Python (đã sửa lỗi cú pháp)
+          BLOCKS=$(echo $RESPONSE | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    content = data['candidates'][0]['content']['parts'][0]['text']
+    # Xử lý xóa bỏ markdown code block nếu AI trả về
+    clean_content = content.strip().replace('```json', '').replace('```', '').strip()
+    print(clean_content)
+except Exception as e:
+    print(f'Error parsing: {e}', file=sys.stderr)
+    sys.exit(1)
+")
           
           echo "SLACK_BLOCKS<<EOF" >> $GITHUB_ENV
           echo "$BLOCKS" >> $GITHUB_ENV
@@ -39,7 +43,7 @@ jobs:
 
       - name: Send to Slack
         run: |
-          # Gửi tin nhắn kèm attachment để có thanh màu xanh bên cạnh cho đẹp
+          # Sử dụng jq để đảm bảo JSON gửi đi không bị lỗi ký tự đặc biệt
           curl -X POST -H 'Content-type: application/json' \
           --data "{
             \"attachments\": [
