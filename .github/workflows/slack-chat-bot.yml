@@ -1,7 +1,7 @@
 name: AWS Study Bot Block Kit
 on:
   schedule:
-    - cron: '0 2,6,10 * * *' 
+    - cron: '13 2,6,10 * * *' 
   workflow_dispatch:
 
 jobs:
@@ -34,18 +34,23 @@ jobs:
           model = "gemini-3.1-flash-lite-preview"
           url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
           
-          # 2. Prompt yêu cầu tách biệt Câu hỏi và Đáp án
+          # 2. Prompt cập nhật: Yêu cầu đáp án Tiếng Việt và xuống dòng rõ ràng
           prompt = """You are an expert AWS technical trainer. Generate 1 highly complex, scenario-based multiple-choice question in English for the AWS Certified Solutions Architect - Professional exam. 
           Return ONLY a valid JSON object with EXACTLY two keys: "question_blocks" and "answer_blocks". Do not include markdown formatting like ```json.
           
           Structure for "question_blocks" (Slack Block Kit array):
           1. header: "AWS Professional Practice Question"
-          2. section: The detailed scenario
-          3. section: The options (A, B, C, D)
+          2. section: The detailed scenario (must be in English)
+          3. section: The options (A, B, C, D) (must be in English)
           
           Structure for "answer_blocks" (Slack Block Kit array):
           1. divider
-          2. section: The correct answer and a detailed explanation."""
+          2. section: The correct answer and a detailed explanation. 
+             CRITICAL REQUIREMENT: This section MUST BE WRITTEN IN VIETNAMESE (Tiếng Việt). 
+             FORMATTING REQUIREMENT: You MUST use explicit newline characters (\\n\\n) to separate the explanation of each option. Do not write a single solid paragraph. 
+             Format exactly like this example:
+             "*Đáp án đúng: C*\\n\\n*Giải thích chi tiết:*\\n\\n- *Tùy chọn A sai* vì...\\n\\n- *Tùy chọn B sai* vì...\\n\\n- *Tùy chọn C đúng* vì...\\n\\n- *Tùy chọn D sai* vì..."
+          """
 
           # 3. Gọi Gemini API
           data = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -91,9 +96,9 @@ jobs:
           try:
               print("Đang gửi câu hỏi lên Slack...")
               send_to_slack(question_blocks)
-              print("✅ Đã gửi câu hỏi. Bắt đầu đếm ngược 15 phút...")
+              print("✅ Đã gửi câu hỏi. Bắt đầu đếm ngược 10 phút...")
               
-              # Dừng script 10 phút (900 giây)
+              # Dừng script 10 phút (600 giây)
               time.sleep(600)
               
               print("Đã hết 10 phút, đang gửi đáp án...")
